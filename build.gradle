@@ -49,6 +49,14 @@ dependencies {
 
 }
 
+shadowJar{
+    archiveBaseName.set('my-flink-job')
+    archiveClassifier.set('')
+    archiveVersion.set('1.0.0')
+}
+
+tasks.build.dependsOn(shadowJar)
+
 test {
     useJUnitPlatform()
 }

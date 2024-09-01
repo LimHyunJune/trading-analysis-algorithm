@@ -12,6 +12,7 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.json.JSONObject;
 
+import java.awt.print.Book;
 import java.time.Duration;
 import java.util.Properties;
 
@@ -22,7 +23,7 @@ import java.util.Properties;
 
 public class Main {
     public static void main(String[] args) throws Exception {
-        final String bootstrapServer = "192.168.56.101:9092";
+        final String bootstrapServer = "localhost:9092";
 
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         Properties props = new Properties();
@@ -40,19 +41,30 @@ public class Main {
 
         DataStreamSource<Tuple2<String, String>> source = env.fromSource(kafkaSource, watermarkStrategy, "kafka source");
         source.print();
-        DataStream<Tuple2<String, String>> stream_1 = source.filter((FilterFunction<Tuple2<String, String>>) value -> {
+        DataStream<Tuple2<String, String>> tradingStrength = source.filter((FilterFunction<Tuple2<String, String>>) value -> {
             JSONObject jsonObject = new JSONObject(value.f1);
-            return jsonObject.getInt("ASKP1") < 80000;
+            return jsonObject.getDouble("CTTR") >= 150;
         });
-        stream_1.print();
+        DataStream<Tuple2<String, String>> buyRatio = tradingStrength.filter((FilterFunction<Tuple2<String, String>>) value -> {
+            JSONObject jsonObject = new JSONObject(value.f1);
+            return jsonObject.getDouble("SHNU_RATE") >= 0.60;
+        });
+        DataStream<Tuple2<String, String>> orderBookVolume = buyRatio.filter((FilterFunction<Tuple2<String, String>>) value -> {
+            JSONObject jsonObject = new JSONObject(value.f1);
+            int TOTAL_BIDP_RSQN = jsonObject.getInt("TOTAL_BIDP_RSQN"); // 매수 호가 잔량
+            int TOTAL_ASKP_RSQN = jsonObject.getInt("TOTAL_ASKP_RSQN"); // 매도 호가 잔량
 
+            return (double) TOTAL_BIDP_RSQN /TOTAL_ASKP_RSQN >= 1.2;
+        });
+
+        orderBookVolume.print();
 
         KafkaSink<Tuple2<String, String>> kafkaSink = KafkaSink.<Tuple2<String, String>>builder()
                 .setBootstrapServers(bootstrapServer)
                 .setRecordSerializer(new KeyValueSerializationSchema())
                 .build();
 
-        stream_1.sinkTo(kafkaSink);
+        orderBookVolume.sinkTo(kafkaSink);
 
         // Flink 작업 실행
         env.execute("DataStream Row Field Example");
